@@ -77,7 +77,7 @@ InFileHeader = ('Year,Year Fraction,DFOY,TIMESTAMP,RECORD,Day_of_Year,'
 #              "spruce_website_data/DPH_all_data.csv"))
 
 CompiledFile = open(OutFile, 'w')
-CompiledFile.write(InFileHeader)
+CompiledFile.write(InFileHeader + '\n')  # added return character 4/21/2020
 
 for file in InFileList:
   f = open(file, 'r')

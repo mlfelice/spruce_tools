@@ -81,34 +81,39 @@ def average(line, interval):
     sum += get_depth(line, i) 
   return sum / ((interval[1] - interval[0]) + 1)
 
-InFile = open(InFileName,'r')
-
-OutFile1 = "C:/Users/Mark/Desktop/wew_files_temp/DPH_Btemps.csv"
-e = open(OutFile1, 'w') 
-
-# The input file has a header, copy it to the output.
-header = InFile.readline()  # Reads first line of input file and stores as header
-e.write(','.join(filter(header))+"\n")  # Writes header to first line of output file 1
 
 data = []  # instantiate empty list to house the data lines (will be a list of strings)
 
-for line in InFile:  # Go through file line by line
-  fields = filter(line)  # select only the relevant columns (fields) after splitting into list of strings
-  for date in sampling_dates:  # iterate over all dates specified at beginning of code
-    if in_range(fields, date):  # checks to see if date is within range of specified dates
-      break  # if yes, break out of loop and continue to check if plot is one that's included
-  else:
-    continue  
-  p = int(fields[1])  # store plot field as p
-  if p not in plots:  # check to see if plot matches on of specified plots
-    continue  # if not, continue iterating with next line of data file
+with open(InFileName, 'r') as InFile:
   
-  data.append(fields)  # if plot did match list of plots, then add the list (line) to data list (produces list of lists)
-  output = ",".join(fields)  # condense list back into a string
-  e.write(output + "\n")  # write to line of output file
+  header = InFile.readline()  # Reads first line of input file and stores as header
+  
+  for line in InFile:  # Go through file line by line
+    fields = filter(line)  # select only the relevant columns (fields) after splitting into list of strings
+    
+    for date in sampling_dates:  # iterate over all dates specified at beginning of code
+      if in_range(fields, date):  # checks to see if date is within range of specified dates
+        break  # if yes, break out of loop and continue to check if plot is one that's included
+   
+    else:
+      continue  
+    
+    p = int(fields[1])  # store plot field as p
+    
+    if p not in plots:  # check to see if plot matches on of specified plots
+      continue  # if not, continue iterating with next line of data file
+    
+    data.append(fields)  # if plot did match list of plots, then add the list (line) to data list (produces list of lists)
 
-InFile.close()      
-e.close()
+OutFile1 = "C:/Users/Mark/Desktop/wew_files_temp/DPH_Btemps.csv"
+
+with open(OutFile1, 'w') as e:
+  e.write(','.join(filter(header))+"\n")  # Writes header to first line of output file 1
+  
+  for fields in data:
+    output = ",".join(fields)  # condense list back into a string
+    e.write(output + "\n")  # write to line of output file
+## Try to rewrite this above outfile chunk using csv writer
 
 ## This part uses the slope between temp measurements to determine the temp at each cm increment
 ## For each plot, the slope between the B-series temperature measurements

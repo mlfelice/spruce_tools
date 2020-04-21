@@ -37,17 +37,21 @@
 #   - Changed datetime format to '%Y/%m/%d %H:%M' from '%Y-%m-%d %H:%M'
 #   - Replaced strptime() with string slice in in_range() -- 10-15x faster
 
+#   - 4/21/2020:
+#     - Changed in_range() to work with dictionary
+
 #####################################
 
 import datetime
 import bisect
 import numpy
+import csv
 
 InFileName = ("C:/Users/Mark/Desktop/"
               "wew_files_temp/DPH_all_data.csv") #Change file name if starting data is different 
-sampling_dates = [ datetime.datetime(2016, 6, 13, 16),
-                   datetime.datetime(2016, 7, 15, 16),  # MF: Not sure of the July and October sampling dates
-                   datetime.datetime(2016, 8, 23, 16),
+sampling_dates = [ #datetime.datetime(2016, 6, 13, 16),
+                   #datetime.datetime(2016, 7, 15, 16),  # MF: Not sure of the July and October sampling dates
+                   #datetime.datetime(2016, 8, 23, 16),
                    datetime.datetime(2016, 10, 15, 16) ] 
 
 before = datetime.timedelta(days = 2) #collect data from this number of days prior to sampling 
@@ -59,16 +63,15 @@ depths = [0, 5, 10, 20, 30, 40, 50, 100, 200]
 intervals = [(1, 10), (10, 20), (20, 30), (30, 40), (40, 50), (50, 75), 
              (75, 100), (100, 125), (125, 150), (150, 175), (175, 200)]
 
-## Extract desired columns and timepoints from the full datafile(TimeStamp, plot, B_SeriesTemp)
-
 def filter(line):
-  columns = line.split(',')
-  return [ columns[3], columns[7], columns[37], columns[38], 
-          columns[39], columns[40], columns[41], columns[42], columns[43], 
-          columns[44], columns[45] ]
+  #columns = line.split(',')
+  return [ line['TIMESTAMP'], line['Plot'], line['TS_0__B1'], line['TS_-5__B2'], 
+           line['TS_-10__B3'], line['TS_-20__B4'], line['TS_-30__B5'], 
+           line['TS_-40__B6'], line['TS_-50__B7'], line['TS_-100__B8'], 
+           line['TS_-200__B9'] ]
 
 def in_range(fields, date): #this filters timepoint based on sampling date of interest
-   d = datetime.datetime(int(fields[0][:4]), int(fields[0][5:7]), int(fields[0][8:10]))
+   d = datetime.datetime(int(fields['TIMESTAMP'][:4]), int(fields['TIMESTAMP'][5:7]), int(fields['TIMESTAMP'][8:10]))
    
    if d >= date - before and d <= date: #this gives us data from desired time before sampling date
     return True
@@ -85,26 +88,23 @@ def average(line, interval):
 data = []  # instantiate empty list to house the data lines (will be a list of strings)
 
 with open(InFileName, 'r') as InFile:
-  
-  header = InFile.readline()  # Reads first line of input file and stores as header
-  
-  for line in InFile:  # Go through file line by line
-    fields = filter(line)  # select only the relevant columns (fields) after splitting into list of strings
-    
-    for date in sampling_dates:  # iterate over all dates specified at beginning of code
-      if in_range(fields, date):  # checks to see if date is within range of specified dates
-        break  # if yes, break out of loop and continue to check if plot is one that's included
-   
-    else:
-      continue  
-    
-    p = int(fields[1])  # store plot field as p
-    
-    if p not in plots:  # check to see if plot matches on of specified plots
-      continue  # if not, continue iterating with next line of data file
-    
-    data.append(fields)  # if plot did match list of plots, then add the list (line) to data list (produces list of lists)
+  ######
+  reader = csv.DictReader(InFile)
+  #header = next(reader, None) # need to select only the relevant cols, also need to change in_range to target unfiltered rows
+  for line in reader:
+    for date in sampling_dates:
+      #print(in_range(line, date))
+      if in_range(line, date) == False:  # checks to see if date is within range of specified dates
+        continue
+          # if yes, break out of loop and continue to check if plot is one that's included
+      else:
+        p = int(line['Plot'])  # store plot field as p
+        if p not in plots:  # check to see if plot matches on of specified plots
+          break  # if not, continue iterating with next line of data file
+        else:
+          data.append(filter(line))  # if plot did match list of plots, then add the list (line) to data list (produces list of lists)
 
+###############
 OutFile1 = "C:/Users/Mark/Desktop/wew_files_temp/DPH_Btemps.csv"
 
 with open(OutFile1, 'w') as e:

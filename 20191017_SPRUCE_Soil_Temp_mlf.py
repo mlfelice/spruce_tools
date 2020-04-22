@@ -68,13 +68,16 @@ def filter(line):
           columns[44], columns[45] ]
 
 def in_range(fields, date): #this filters timepoint based on sampling date of interest
-   d = datetime.datetime(int(fields[0][:4]), int(fields[0][5:7]), int(fields[0][8:10]))
-   
-   if d >= date - before and d <= date: #this gives us data from desired time before sampling date
+   d_str = fields[0].split(' ')
+   d = d_str[0]
+   t = d_str[1].zfill(8)  # Add leading 0 on single hour for uniform str len
+   dt = datetime.datetime(int(d[:4]), int(d[5:7]), int(d[8:10]), int(t[0:2]), 
+                         int(t[3:5]))  # added time fields
+   if dt >= date - before and dt <= date: #this gives us data from desired time before sampling date
     return True
    else:
     return False
-
+  
 def average(line, interval):
   sum = 0 
   for i in range(interval[0], interval[1]+1):
@@ -93,18 +96,10 @@ with open(InFileName, 'r') as InFile:
     
     for date in sampling_dates:  # iterate over all dates specified at beginning of code
       if in_range(fields, date):  # checks to see if date is within range of specified dates
-        break  # if yes, break out of loop and continue to check if plot is one that's included
-   
-    else:
-      continue  
-    
-    p = int(fields[1])  # store plot field as p
-    
-    if p not in plots:  # check to see if plot matches on of specified plots
-      continue  # if not, continue iterating with next line of data file
-    
-    data.append(fields)  # if plot did match list of plots, then add the list (line) to data list (produces list of lists)
-
+        p = int(fields[1])  # store plot field as p
+        if p in plots:
+          data.append(fields)  # if plot did match list of plots, then add the list (line) to data list (produces list of lists)
+      
 OutFile1 = "C:/Users/Mark/Desktop/wew_files_temp/DPH_Btemps.csv"
 
 with open(OutFile1, 'w') as e:
@@ -113,7 +108,7 @@ with open(OutFile1, 'w') as e:
   for fields in data:
     output = ",".join(fields)  # condense list back into a string
     e.write(output + "\n")  # write to line of output file
-## Try to rewrite this above outfile chunk using csv writer
+
 
 ## This part uses the slope between temp measurements to determine the temp at each cm increment
 ## For each plot, the slope between the B-series temperature measurements

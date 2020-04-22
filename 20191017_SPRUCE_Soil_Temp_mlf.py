@@ -93,7 +93,7 @@ with open(InFileName, 'r') as InFile:
   
   for line in InFile:  # Go through file line by line
     fields = filter(line)  # select only the relevant columns (fields) after splitting into list of strings
-    
+    #can probably rewrite below with list comprehension
     for date in sampling_dates:  # iterate over all dates specified at beginning of code
       if in_range(fields, date):  # checks to see if date is within range of specified dates
         p = int(fields[1])  # store plot field as p
@@ -101,14 +101,11 @@ with open(InFileName, 'r') as InFile:
           data.append(fields)  # if plot did match list of plots, then add the list (line) to data list (produces list of lists)
       
 OutFile1 = "C:/Users/Mark/Desktop/wew_files_temp/DPH_Btemps.csv"
-
 with open(OutFile1, 'w') as e:
   e.write(','.join(filter(header))+"\n")  # Writes header to first line of output file 1
-  
   for fields in data:
     output = ",".join(fields)  # condense list back into a string
     e.write(output + "\n")  # write to line of output file
-
 
 ## This part uses the slope between temp measurements to determine the temp at each cm increment
 ## For each plot, the slope between the B-series temperature measurements
@@ -129,36 +126,31 @@ def get_depth(fields, depth):
 
 
 ## Calculate the average temperature per DPH sampling depth increment for each plot at each 30-minute timestamp.
-
-OutFile2 = ("C:/Users/Mark/Desktop/wew_files_temp/DPH_Averages.txt") # tab-separated b/c interval is tuple
-f = open(OutFile2, 'w')
-
-print("TimeStamp \tPlot \tupper depth \tlower depth \taverage temperature \n", 
-      file = f)
-for line in data:
-  for i in intervals:
-    print(line[0], "\t", line[1], "\t", str(i[0]), "\t", str(i[1]), "\t", 
-          average(line, i),  file = f) 
-
-f.close()
+OutFile2 = ('C:/Users/Mark/Desktop/wew_files_temp/DPH_Averages.txt') # tab-separated b/c interval is tuple
+with open(OutFile2, 'w') as f:
+  print('TimeStamp \tPlot \tupper depth \tlower depth \taverage temperature', 
+        file = f)
+  for line in data:
+    for i in intervals:
+      print(line[0], '\t', line[1], '\t', str(i[0]), '\t', str(i[1]), '\t', 
+            average(line, i),  file = f)  
 
 ## Return the average, standard deviation, maximum, and minimum temperature 
 ## for each DPH sampling depth increment over the 48 hour time period prior to the day of sampling.
 
-OutFile3 = "C:/Users/Mark/Desktop/wew_files_temp/DPH_plot_depth_date.txt"  # tab-separated b/c interval is tuple
-g = open(OutFile3, 'w')
-print("Date \tPlot \tDepth \tMin \tMax \tAverage \tStDev \n", file = g)
-for plot in plots:
+OutFile3 = 'C:/Users/Mark/Desktop/wew_files_temp/DPH_plot_depth_date.txt'  # tab-separated b/c interval is tuple
+with open(OutFile3, 'w') as g:
+  print('Date \tPlot \tDepth \tMin \tMax \tAverage \tStDev \n', file = g)
+  for plot in plots:
    for date in sampling_dates:
      max_depth = 200
      for interval in intervals:
        temps = [ average(sample, interval) for sample in data 
                 if in_range(sample, date) and int(sample[1]) == plot ]
-       if len(temps) == 0:
+       if len(temps) != 0:
+         avg = numpy.mean(temps)
+         stdev = numpy.std(temps) 
+         print(date, "\t", plot, "\t", interval, "\t",min(temps), "\t", 
+               max(temps),"\t", avg, "\t", stdev, file = g)
+       else:
          print("no data for" , interval, plot, date)
-         continue
-       avg = numpy.mean(temps)
-       stdev = numpy.std(temps) 
-       print(date, "\t", plot, "\t", interval, "\t",min(temps), "\t", 
-             max(temps),"\t", avg, "\t", stdev, file = g)
-g.close()

@@ -218,78 +218,62 @@ def average(temps, darray, interval):  # interval is a tuple
   """
   sum = 0
   for r in range(interval[0], interval[1]+1):
-    sum += numpy.interp(r, darray, temps)
+    sum += numpy.interp(r, depths, temps)
   avg = sum / (interval[1] - interval[0] + 1)
   return avg
 
 # Import csv data into list of lists, filtering to match dates and plots
 InFile = open(InFileName,'r')
 
-data = []  # instantiate empty list to house the data lines (will be a list of strings)
-
 with open(InFileName, 'r') as InFile:
   header = InFile.readline()  # Reads first line of input file and stores as header
-  for line in InFile:  # Iterate line by line through file
-    yr = int(line[0:4])  #  select the year from data line
-    if yr in sampling_dates:
-      fields = filter(line)  # if in date range, filter to fields of interest
-      p = int(fields[1])  # store plot field as p
-      if p in plots:  # Check plot matches target plots
-        data.append(fields)  # if plot matches targets, add the line (list) to data list (produces list of lists)
+  tmp_data = [ filter(line) for line in InFile if int(line[0:4]) in sampling_dates ]
+  data = [ line for line in tmp_data if int(line[1]) in plots ]
 
 # Write filtered to data to csv for documentation      
 BTempsCSV = "C:/Users/Mark/Desktop/wew_files_temp/DPH_Btemps.csv"
 with open(BTempsCSV, 'w') as bt:
   bt.write(','.join(filter(header))+"\n")  # Writes header to first line of output file 1
   for fields in data:
-    output = ",".join(fields)  # condense list back into a string
-    bt.write(output + "\n")  # write to line of output file
+    bt.write(",".join(fields) + "\n")  # condense list back into a string and write to line of output file
 print(datetime.datetime.now())
 
 
-## This part uses the slope between temp measurements to determine the temp at each cm increment
-## For each plot, the slope between the B-series temperature measurements
-## ex: (Temp1, Depth1) and (Temp2, Depth2), is used to estimate the temperature for each cm depth increment at every 30-minute timestamp.
-
+# This part uses the slope between temp measurements to determine the temp at each cm increment
+# For each plot, the slope between the B-series temperature measurements
+# ex: (Temp1, Depth1) and (Temp2, Depth2), is used to estimate the temperature for each cm depth increment at every 30-minute timestamp.
 # Calculate the average temperature per DPH sampling depth increment for each plot at each 30-minute timestamp.
 # **Input data are for sensor temps, output is for actual sampling intervals. Each date x plot will have different number of entries
 avgs = []
-missing = []
+missing = []  # Missing values currently only store to list, may want to output to file eventually
 # Code chunk below prints averages in wide format, unlike original script
 # TO DO: rewrite to print long format
 AvgCSV = ('C:/Users/Mark/Desktop/wew_files_temp/DPH_Averages.txt') # tab-separated b/c interval is tuple
 with open(AvgCSV, 'w') as av:
   print('TimeStamp \tPlot\t' + '\t'.join(map(str, intervals)), file = av)  # Print header to ouput csv
   for line in data:
-    tmp = line[0:2]  # placeholder for the date and plot so reappend after the array operations (requires conversions to numeric)
     try:
       tarray = numpy.array(line[2:], dtype = float)
     except ValueError:
       missing.append(line)
-    for i in intervals:
-      tmp.append(average(tarray, darray, i))  # goes into the line for single results
+    tmp = line[0:2] + [average(tarray, depths, i) for i in intervals]  # merge list of averages to the date and plot fields
     avgs.append(tmp)  # becomes the full list of results and their date/plot
-    av.write('\t'.join(map(str, tmp)) + '\n')
+    av.write('\t'.join( [str(t) for t in tmp] ) + '\n')  # convert numeric fields to str so that we can join and print
 print(datetime.datetime.now())
-## Return the average, standard deviation, maximum, and minimum temperature 
-## for each DPH sampling depth increment over the calendar year of sampling
+
 
 # Average the interpolated sampling depth temps over all sampling dates over the calendar year, save to output file         
 FinalCSV = 'C:/Users/Mark/Desktop/wew_files_temp/DPH_plot_depth_date.txt'  # tab-separated b/c interval is tuple
 with open(FinalCSV, 'w') as fi:
   print('Date \tPlot \tDepth \tMin \tMax \tAverage \tStDev \n', file = fi)
-  final_res = []
+  #final_res = []  # uncomment if you want to store data as list for further manipulation
   for date in sampling_dates:  # Remove index for final version
     for plot in plots:  
       for i in range(0, len(intervals)):
-        #depth = get_depth()
-        temps = []  # maybe there's a numpy function for transposing instead of going line by line?
-        for sample in avgs:
-          if in_range(sample, date) and plot == int(sample[1]):  # Is this necessary? Seems like maybe if you're going to have multiple ranges
-            temps.append(sample[i+2])
-        avg = numpy.mean(temps)
-        stdev = numpy.std(temps) 
-        tmp2 = [date, plot, intervals[i], min(temps), max(temps), avg, stdev] 
-        final_res.append(tmp2)
-        fi.write('\t'.join(map(str, tmp2)) + '\n')
+        temps = [ sam[i+2] for sam in avgs if in_range(sam, date) and 
+                 plot == int(sam[1]) ]
+        tmp2 = [date, plot, intervals[i], min(temps), max(temps), 
+                numpy.mean(temps), numpy.std(temps) ] 
+        #final_res.append(tmp2)  # uncomment if you want to store data as list for further manipulation
+        fi.write('\t'.join( [str(t) for t in tmp2] ) + '\n')  # convert numeric fields to str so that we can join and print
 print(datetime.datetime.now())  # Would probably be most helpful to have the measurement number. Then you could easily find the entry in question

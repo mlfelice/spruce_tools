@@ -1,3 +1,36 @@
+"""
+SPRUCE mean annual temperature calculator
+
+This script imports SPRUCE WEW data and calculates mean annual temp for
+specified sampling depths and year. Temperature sensors are not located
+at the same depths as peat sampling intervals, so this script uses 
+linear interpolation at 1-cm intervals within sampling intervals to 
+estimate average temperature within each interval. These are then 
+averaged across all temperature readings (taken every 30 minutes) 
+during the specified year. Missing values will translate to None value
+in the interpolated sample temp for interval with missing value. This 
+will convert to NaN and be ignored when averaging across dates.
+
+Accepts csv files from the following URL as input:
+  
+Returns 3 files:
+  B series temps from desired dates, 
+  Average temp for sampling depth increments at all timestamps,
+  Average temp for sampling depths at each sampling time.
+  
+Requires 'numpy' module be installed within the Python directory you 
+are running this script from. Numpy may also include other 
+dependencies.
+
+This script may be run as a script or imported as a module and contains 
+the following functions:
+  *filter - convert line to list with date, plot and temperature fields
+  *is_year - compares year in data line to target year
+  *in_range - compares year from full date field to target year
+  *get_depth - gets temp from shallowest sensor adjacent to spec'd depth
+  *average - finds average temp across interval using linear interp
+"""
+
 #!/usr/bin/env python
 
 # This python script will parse desired temperature data from the full DPH dataset.
@@ -35,11 +68,13 @@ import datetime
 import bisect
 import numpy
 
+print(datetime.datetime.now())
+
 InFileName = ("C:/Users/Mark/Desktop/"
               "wew_files_temp/DPH_all_data.csv") #Change file name if starting data is different 
-sampling_dates = [ datetime.datetime(2016, 6, 13, 16),
-                   datetime.datetime(2016, 7, 15, 16),  # MF: Not sure of the July and October sampling dates
-                   datetime.datetime(2016, 8, 23, 16),
+sampling_dates = [ #datetime.datetime(2016, 6, 13, 16),
+                   #datetime.datetime(2016, 7, 15, 16),  # MF: Not sure of the July and October sampling dates
+                   #datetime.datetime(2016, 8, 23, 16),
                    datetime.datetime(2016, 10, 15, 16) ]  
 
 plots = [ 4, 6, 7, 8, 10, 11, 13, 16, 17, 19, 20 ]
@@ -49,105 +84,219 @@ depths = [0, 5, 10, 20, 30, 40, 50, 100, 200]
 intervals = [(1, 10), (10, 20), (20, 30), (30, 40), (40, 50), (50, 75), 
              (75, 100), (100, 125), (125, 150), (150, 175), (175, 200)]
 
-## Extract desired columns and timepoints from the full datafile(TimeStamp, plot, B_SeriesTemp)
 
+def is_year(fields, date):
+  """
+  Checks if current line is from calendar year of interest.
+  
+  Parameters
+  ----------
+  fields : str
+    String representation of year (eg. '2016')
+  date : datetime.datetime object
+    datetime.datetime object including at least the date. This fun 
+    tests for matching calendar year, not +/- 365/366 day window.
+
+
+  Returns
+  -------
+  bool
+    True if year in line matches year of target date.
+    False if year in line does not match year of target date.
+  """
+  
+  if fields == date.year: #this gives us data from desired time before sampling date
+   return True
+  else:
+   return False
+
+## Extract desired columns and timepoints from the full datafile(TimeStamp, plot, B_SeriesTemp)
 def filter(line):
+  """
+  Splits text line into fields and selects date, plot, and temperatures
+  from B-series temperature sensors.
+
+  Parameters
+  ----------
+  line : str
+    String representing one data line from SPRUCE WEW data csv. Must be
+    comma separated. Cols must be TIMESTAMP [3], Plot [7], 
+    TS_0__B1 [37], temp sensors from other depths [38:45]
+
+  Returns
+  -------
+  list
+    List containing filtered data fields: TIMESTAMP, Plot, B-series 
+    temperature data.
+  """
+  
   columns = line.split(',')
   return [ columns[3], columns[7], columns[37], columns[38], 
           columns[39], columns[40], columns[41], columns[42], columns[43], 
           columns[44], columns[45] ]
 
-def in_range(fields, date): #this filters timepoint based on sampling date of interest
-   d = datetime.datetime(int(fields[0][:4]), int(fields[0][5:7]), int(fields[0][8:10])) 
-   if d.year == date.year: #this gives us data from desired time before sampling date
+
+  
+def in_range(fields, date): 
+  """
+  Checks if current line from data list is from calendar year of 
+  interest.
+
+  Parameters
+  ----------
+  fields : list
+    List representing one line of data from SPRUCE WEW imported data 
+    after processing with filter().
+
+  date : datetime.datetime object
+    datetime.datetime object including at least the date. This fun 
+    tests for matching calendar year, not +/- 365/366 day window.
+
+  Returns
+  -------
+  bool
+    True if year in TIMESTAMP matches year of target date.
+    False if year in TIMESTAMP does not match year of target date.
+
+  """
+
+  d = int(fields[0][0:4])
+  if d >= date.year: #this gives us data from desired time before sampling date
     return True
-   else:
+  else:
     return False
 
-def average(line, interval):
-  sum = 0 
-  for i in range(interval[0], interval[1]+1):
-    sum += get_depth(line, i) 
-  return sum / ((interval[1] - interval[0]) + 1)
-
-InFile = open(InFileName,'r')
-
-OutFile1 = "C:/Users/Mark/Desktop/wew_files_temp/DPH_Btemps.csv"
-e = open(OutFile1, 'w') 
-
-# The input file has a header, copy it to the output.
-header = InFile.readline()
-e.write(','.join(filter(header))+"\n")
-
-data = []
-
-for line in InFile: 
-  fields = filter(line)
-  for date in sampling_dates:
-    if in_range(fields, date):
-      break 
-  else:
-    continue  
-  p = int(fields[1]) 
-  if p not in plots:
-    continue
+def get_depth(fields, depth): # throws ValueError if it encounters a missing value in the line
+  """
+  Estimates temp at point between sensors using linear interpolation
   
-  data.append(fields)
-  output = ",".join(fields)
-  e.write(output + "\n")   
+  Parameters
+  ----------
+  fields : list
+    List representing one line of SPRUCE WEW data filtered with 
+    filter() fun.
+  depth : int
+    Depth at which you want to estimate temperature.
 
-InFile.close()      
-e.close()
-
-## This part uses the slope between temp measurements to determine the temp at each cm increment
-## For each plot, the slope between the B-series temperature measurements
-## ex: (Temp1, Depth1) and (Temp2, Depth2), is used to estimate the temperature for each cm depth increment at every 30-minute timestamp.
-
-def get_depth(fields, depth): 
+  Returns
+  -------
+  float
+    Returns a float value of the temperature estimated at specified 
+    point based on linear interpolation between adjacent temperature 
+    sensors.
+  """
   if depth == 0:
-    return fields[2]                                            
-  i = bisect.bisect_left(depths, depth)                                         
-  if depth < 0 or i >= len(depths):          
+    return fields[2]  # if depth is zero, just return the temp from the upper-most sensor (surface)                                
+  i = bisect.bisect_left(depths, depth)  # depth is the depth between interval, i is the sensor above depth                              
+  if i >= len(depths):  # Removed depth < 0 condition, as this is not possible This could be the case if depth was shallower than min or deeper than max depth in depths list        
     raise ValueError                       
 
-  lo = float(fields[2+(i-1)])    
-  hi = float(fields[2+i])        
+  lo = float(fields[2+(i-1)])  # finds index of temp at shallowest adjacent sensor 
+  hi = float(fields[2+i])  # finds index of temp at deepest adjacent sensor
   m = (hi - lo) / (depths[i] - depths[i - 1])
   result = lo + ((depth - depths[i - 1]) * m)
   return result
 
 
+def average(line, interval):
+  """
+  Calcs average temp interpolated across specified depth interval.
+
+  Parameters
+  ----------
+  line : list
+    List representing one line of SPRUCE WEW data filtered with 
+    filter() fun.
+  interval : tuple
+    Tuple representing the upper and lower bound of the peat sampling
+    interval in cm.
+
+  Returns
+  -------
+  float
+    Returns a float value of the mean temperature across the specified 
+    sampling interval. Average is calculated from values estimated at 
+    1-cm intervals from linear interpolation in get_depth() fun.
+  """
+  
+  missing = []
+  sum = 0 
+  for i in range(interval[0], interval[1]+1):
+    try:
+      sum += get_depth(line, i) # if there is a missing value, throws ValueError, should proceed to except statement
+    except: 
+      #break  #this seems to be the issue; looks like it would break out of the for loop completely, leaving sum = 0
+      # really need to filter out lines with missing vals earlier
+      #print(line)
+      return  # This returns None; I think we need to test for missing values earlier
+  return sum / ((interval[1] - interval[0]) + 1)
+
+# Import csv data into list of lists, filtering to match dates and plots
+InFile = open(InFileName,'r')
+
+data = []  # instantiate empty list to house the data lines (will be a list of strings)
+
+with open(InFileName, 'r') as InFile:
+  header = InFile.readline()  # Reads first line of input file and stores as header
+  for line in InFile:  # Iterate line by line through file
+    yr = int(line[0:4])  #  select the year from data line
+    for date in sampling_dates:  # Iterate over all target dates to check match with data line
+    #TO DO: change target date input to years instead of datetime, then we can
+    # use if date in sampling_dates:, which would eliminate one level of nest
+      if is_year(yr, date):  # checks to see if date is within range of specified dates
+        fields = filter(line)  # if in date range, filter to fields of interest
+        p = int(fields[1])  # store plot field as p
+        if p in plots:  # Check plot matches target plots
+          data.append(fields)  # if plot matches targets, add the line (list) to data list (produces list of lists)
+
+# Write filtered to data to csv for documentation      
+OutFile1 = "C:/Users/Mark/Desktop/wew_files_temp/DPH_Btemps.csv"
+with open(OutFile1, 'w') as e:
+  e.write(','.join(filter(header))+"\n")  # Writes header to first line of output file 1
+  for fields in data:
+    output = ",".join(fields)  # condense list back into a string
+    e.write(output + "\n")  # write to line of output file
+print(datetime.datetime.now())
+
+
+## This part uses the slope between temp measurements to determine the temp at each cm increment
+## For each plot, the slope between the B-series temperature measurements
+## ex: (Temp1, Depth1) and (Temp2, Depth2), is used to estimate the temperature for each cm depth increment at every 30-minute timestamp.
+
+
+
+
 ## Calculate the average temperature per DPH sampling depth increment for each plot at each 30-minute timestamp.
 
-OutFile2 = ("C:/Users/Mark/Desktop/wew_files_temp/DPH_Averages.txt") # tab-separated b/c interval is tuple
-f = open(OutFile2, 'w')
-
-print("TimeStamp \tPlot \tupper depth \tlower depth \taverage temperature \n", 
-      file = f)
-for line in data:
-  for i in intervals:
-    print(line[0], "\t", line[1], "\t", str(i[0]), "\t", str(i[1]), "\t", 
-          average(line, i),  file = f) 
-
-f.close()
-
+OutFile2 = ('C:/Users/Mark/Desktop/wew_files_temp/DPH_Averages.txt') # tab-separated b/c interval is tuple
+with open(OutFile2, 'w') as f:
+  print('TimeStamp \tPlot \tupper depth \tlower depth \taverage temperature', 
+        file = f)
+  for line in data:
+    for i in intervals:
+      print(line[0], '\t', line[1], '\t', str(i[0]), '\t', str(i[1]), '\t', 
+            average(line, i),  file = f)  
+print(datetime.datetime.now())
 ## Return the average, standard deviation, maximum, and minimum temperature 
 ## for each DPH sampling depth increment over the 48 hour time period prior to the day of sampling.
 
-OutFile3 = "C:/Users/Mark/Desktop/wew_files_temp/DPH_plot_depth_date.txt"  # tab-separated b/c interval is tuple
-g = open(OutFile3, 'w')
-print("Date \tPlot \tDepth \tMin \tMax \tAverage \tStDev \n", file = g)
-for plot in plots:
-   for date in sampling_dates:
-     max_depth = 200
-     for interval in intervals:
-       temps = [ average(sample, interval) for sample in data 
-                if in_range(sample, date) and int(sample[1]) == plot ]
-       if len(temps) == 0:
-         print("no data for" , interval, plot, date)
-         continue
-       avg = numpy.mean(temps)
-       stdev = numpy.std(temps) 
-       print(date, "\t", plot, "\t", interval, "\t",min(temps), "\t", 
-             max(temps),"\t", avg, "\t", stdev, file = g)
-g.close()
+OutFile3 = 'C:/Users/Mark/Desktop/wew_files_temp/DPH_plot_depth_date.txt'  # tab-separated b/c interval is tuple
+with open(OutFile3, 'w') as g:
+  print('Date \tPlot \tDepth \tMin \tMax \tAverage \tStDev \n', file = g)
+  for plot in plots:
+    for date in sampling_dates:
+      #max_depth = 200
+      for interval in intervals:
+        temps = [ average(sample, interval) for sample in data  # I think this does the averaging across dates
+                 if in_range(sample, date) and int(sample[1]) == plot ]
+        temps = numpy.array(temps, dtype = numpy.float64)  # Converting to float64 array changes None to NaN
+        if len(temps) != 0:
+          print(None in temps)  # None is included in temps
+          print(0 in temps)
+          avg = numpy.nanmean(temps)  # nanmean() ignores NaN, formerly None
+          stdev = numpy.nanstd(temps)  # nanstd() ignores NaN, formerly None
+          print(date, "\t", plot, "\t", interval, "\t",numpy.nanmin(temps), 
+                "\t", numpy.nanmax(temps),"\t", avg, "\t", stdev, file = g)  
+        else:
+          print("no data for" , interval, plot, date)  # This will only tell you the date in the sampling dates list that had missing fields. This isn't the actual line that was missing data
+print(datetime.datetime.now())  # Would probably be most helpful to have the measurement number. Then you could easily find the entry in question

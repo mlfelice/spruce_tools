@@ -61,6 +61,9 @@ the following functions:
 
 # 2020-01-09: changed the in_range function so that this calculates mean annual
 # temperature for the year in which the date falls
+#
+# 2020-04-27: missing values were initially throwing a ValueError when 
+# averaging across dates. Initial fix led to 0 values (not sure of mechanism)
 
 #####################################
 
@@ -72,10 +75,7 @@ print(datetime.datetime.now())
 
 InFileName = ("C:/Users/Mark/Desktop/"
               "wew_files_temp/DPH_all_data.csv") #Change file name if starting data is different 
-sampling_dates = [ #datetime.datetime(2016, 6, 13, 16),
-                   #datetime.datetime(2016, 7, 15, 16),  # MF: Not sure of the July and October sampling dates
-                   #datetime.datetime(2016, 8, 23, 16),
-                   datetime.datetime(2016, 10, 15, 16) ]  
+sampling_dates = [ 2016 ]  
 
 plots = [ 4, 6, 7, 8, 10, 11, 13, 16, 17, 19, 20 ]
 
@@ -161,7 +161,7 @@ def in_range(fields, date):
   """
 
   d = int(fields[0][0:4])
-  if d >= date.year: #this gives us data from desired time before sampling date
+  if d >= date: #this gives us data from desired time before sampling date
     return True
   else:
     return False
@@ -219,16 +219,15 @@ def average(line, interval):
     1-cm intervals from linear interpolation in get_depth() fun.
   """
   
-  missing = []
   sum = 0 
   for i in range(interval[0], interval[1]+1):
     try:
       sum += get_depth(line, i) # if there is a missing value, throws ValueError, should proceed to except statement
     except: 
-      #break  #this seems to be the issue; looks like it would break out of the for loop completely, leaving sum = 0
-      # really need to filter out lines with missing vals earlier
-      #print(line)
-      return  # This returns None; I think we need to test for missing values earlier
+      # break  #this seems to be the issue; looks like it would break out of the for loop completely, leaving sum = 0
+      # TO DO: figure out a way to store or write to file entries with missing vals so they can be documented
+      print(line)  # Print the data line with missing data
+      return  # This returns None, which allows us to exclude from averages later
   return sum / ((interval[1] - interval[0]) + 1)
 
 # Import csv data into list of lists, filtering to match dates and plots
@@ -240,14 +239,12 @@ with open(InFileName, 'r') as InFile:
   header = InFile.readline()  # Reads first line of input file and stores as header
   for line in InFile:  # Iterate line by line through file
     yr = int(line[0:4])  #  select the year from data line
-    for date in sampling_dates:  # Iterate over all target dates to check match with data line
-    #TO DO: change target date input to years instead of datetime, then we can
-    # use if date in sampling_dates:, which would eliminate one level of nest
-      if is_year(yr, date):  # checks to see if date is within range of specified dates
-        fields = filter(line)  # if in date range, filter to fields of interest
-        p = int(fields[1])  # store plot field as p
-        if p in plots:  # Check plot matches target plots
-          data.append(fields)  # if plot matches targets, add the line (list) to data list (produces list of lists)
+    if yr in sampling_dates:
+
+      fields = filter(line)  # if in date range, filter to fields of interest
+      p = int(fields[1])  # store plot field as p
+      if p in plots:  # Check plot matches target plots
+        data.append(fields)  # if plot matches targets, add the line (list) to data list (produces list of lists)
 
 # Write filtered to data to csv for documentation      
 BTempsCSV = "C:/Users/Mark/Desktop/wew_files_temp/DPH_Btemps.csv"
@@ -294,8 +291,7 @@ with open(FinalCSV, 'w') as fi:
         # The line above repeats code for the average, but no good workaround without major overhaul
         temps = numpy.array(temps, dtype = numpy.float64)  # Converting to float64 array changes None to NaN, necessary for numpy functions that ignore missing values
         if len(temps) != 0:  # Ensure that all data is not missing
-          print(None in temps)  # None is included in temps
-          print(0 in temps)
+          #print(None in temps)  # None is included in temps
           avg = numpy.nanmean(temps)  # nanmean() ignores NaN, formerly None
           stdev = numpy.nanstd(temps)  # nanstd() ignores NaN, formerly None
           print(date, "\t", plot, "\t", interval, "\t",numpy.nanmin(temps), 

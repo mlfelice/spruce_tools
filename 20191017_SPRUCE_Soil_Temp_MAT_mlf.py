@@ -79,7 +79,7 @@ sampling_dates = [ 2016 ]
 
 plots = [ 4, 6, 7, 8, 10, 11, 13, 16, 17, 19, 20 ]
 
-depths = [0, 5, 10, 20, 30, 40, 50, 100, 200] 
+depths = numpy.array([0, 5, 10, 20, 30, 40, 50, 100, 200], dtype = int) 
 
 intervals = [(1, 10), (10, 20), (20, 30), (30, 40), (40, 50), (50, 75), 
              (75, 100), (100, 125), (125, 150), (150, 175), (175, 200)]
@@ -166,9 +166,9 @@ def in_range(fields, date):
   else:
     return False
 
-def get_depth(fields, depth): # throws ValueError if it encounters a missing value in the line
+def get_depth(fields, depth): 
   """
-  Estimates temp at point between sensors using linear interpolation
+  Gets index of data for shallowest adjacent temp sensor
   
   Parameters
   ----------
@@ -180,33 +180,31 @@ def get_depth(fields, depth): # throws ValueError if it encounters a missing val
 
   Returns
   -------
-  float
-    Returns a float value of the temperature estimated at specified 
-    point based on linear interpolation between adjacent temperature 
-    sensors.
+  int
+    Returns the index of the field with temp data for shallowest temp sensor 
+    that is adjacent to input depth.
   """
+
   if depth == 0:
-    return fields[2]  # if depth is zero, just return the temp from the upper-most sensor (surface)                                
+    return 0  # if depth is zero, just return the temp from the upper-most sensor (surface)                                
   i = bisect.bisect_left(depths, depth)  # depth is the depth between interval, i is the sensor above depth                              
+  
   if i >= len(depths):  # Removed depth < 0 condition, as this is not possible This could be the case if depth was shallower than min or deeper than max depth in depths list        
-    raise ValueError                       
+    raise ValueError 
+  else:
+    return i
 
-  lo = float(fields[2+(i-1)])  # finds index of temp at shallowest adjacent sensor 
-  hi = float(fields[2+i])  # finds index of temp at deepest adjacent sensor
-  m = (hi - lo) / (depths[i] - depths[i - 1])
-  result = lo + ((depth - depths[i - 1]) * m)
-  return result
-
-
-def average(line, interval):
+def average(temps, darray, interval):  # interval is a tuple
   """
   Calcs average temp interpolated across specified depth interval.
 
   Parameters
   ----------
-  line : list
-    List representing one line of SPRUCE WEW data filtered with 
-    filter() fun.
+  temps : numpy.ndarray
+    Array representing temperatures from one line of SPRUCE WEW data filtered 
+    with filter() fun.
+  darray : numpy.array
+    Array of depths corresponding to B-series temperature sensors
   interval : tuple
     Tuple representing the upper and lower bound of the peat sampling
     interval in cm.
@@ -218,17 +216,11 @@ def average(line, interval):
     sampling interval. Average is calculated from values estimated at 
     1-cm intervals from linear interpolation in get_depth() fun.
   """
-  
-  sum = 0 
-  for i in range(interval[0], interval[1]+1):
-    try:
-      sum += get_depth(line, i) # if there is a missing value, throws ValueError, should proceed to except statement
-    except: 
-      # break  #this seems to be the issue; looks like it would break out of the for loop completely, leaving sum = 0
-      # TO DO: figure out a way to store or write to file entries with missing vals so they can be documented
-      print(line)  # Print the data line with missing data
-      return  # This returns None, which allows us to exclude from averages later
-  return sum / ((interval[1] - interval[0]) + 1)
+  sum = 0
+  for r in range(interval[0], interval[1]+1):
+    sum += numpy.interp(r, darray, temps)
+  avg = sum / (interval[1] - interval[0] + 1)
+  return avg
 
 # Import csv data into list of lists, filtering to match dates and plots
 InFile = open(InFileName,'r')
@@ -240,7 +232,6 @@ with open(InFileName, 'r') as InFile:
   for line in InFile:  # Iterate line by line through file
     yr = int(line[0:4])  #  select the year from data line
     if yr in sampling_dates:
-
       fields = filter(line)  # if in date range, filter to fields of interest
       p = int(fields[1])  # store plot field as p
       if p in plots:  # Check plot matches target plots
@@ -260,44 +251,45 @@ print(datetime.datetime.now())
 ## For each plot, the slope between the B-series temperature measurements
 ## ex: (Temp1, Depth1) and (Temp2, Depth2), is used to estimate the temperature for each cm depth increment at every 30-minute timestamp.
 
-
-
-
 # Calculate the average temperature per DPH sampling depth increment for each plot at each 30-minute timestamp.
 # **Input data are for sensor temps, output is for actual sampling intervals. Each date x plot will have different number of entries
+avgs = []
+missing = []
+# Code chunk below prints averages in wide format, unlike original script
+# TO DO: rewrite to print long format
 AvgCSV = ('C:/Users/Mark/Desktop/wew_files_temp/DPH_Averages.txt') # tab-separated b/c interval is tuple
 with open(AvgCSV, 'w') as av:
-  print('TimeStamp \tPlot \tupper depth \tlower depth \taverage temperature',  # Print header to ouput csv
-        file = av)  
-  for line in data:  # Iterate over lines in list containing data
-    # Use each line of data to calculate average temp across each peat sampling interval
-    # Remember, 'data' contains sensor temps, but output file will have peat sampling temps
-    for i in intervals:  
-      print(line[0], '\t', line[1], '\t', str(i[0]), '\t', str(i[1]), '\t', 
-            average(line, i),  file = av)  # see average() documentation for more info
+  print('TimeStamp \tPlot\t' + '\t'.join(map(str, intervals)), file = av)  # Print header to ouput csv
+  for line in data:
+    tmp = line[0:2]  # placeholder for the date and plot so reappend after the array operations (requires conversions to numeric)
+    try:
+      tarray = numpy.array(line[2:], dtype = float)
+    except ValueError:
+      missing.append(line)
+    for i in intervals:
+      tmp.append(average(tarray, darray, i))  # goes into the line for single results
+    avgs.append(tmp)  # becomes the full list of results and their date/plot
+    av.write('\t'.join(map(str, tmp)) + '\n')
 print(datetime.datetime.now())
 ## Return the average, standard deviation, maximum, and minimum temperature 
 ## for each DPH sampling depth increment over the calendar year of sampling
 
-# Average the interpolated sampling depth temps over all sampling dates over the calendar year, save to output file
+# Average the interpolated sampling depth temps over all sampling dates over the calendar year, save to output file         
 FinalCSV = 'C:/Users/Mark/Desktop/wew_files_temp/DPH_plot_depth_date.txt'  # tab-separated b/c interval is tuple
 with open(FinalCSV, 'w') as fi:
   print('Date \tPlot \tDepth \tMin \tMax \tAverage \tStDev \n', file = fi)
-  for plot in plots:
-    for date in sampling_dates:
-      for interval in intervals:
-        temps = [ average(sample, interval) for sample in data  # recalc the sampling interval avg temp for each date and append to list for easy averaging
-                 if in_range(sample, date) and int(sample[1]) == plot ]  # If statements ensure that if you have multiple target dates, they stay separate in output
-        # The line above repeats code for the average, but no good workaround without major overhaul
-        temps = numpy.array(temps, dtype = numpy.float64)  # Converting to float64 array changes None to NaN, necessary for numpy functions that ignore missing values
-        if len(temps) != 0:  # Ensure that all data is not missing
-          #print(None in temps)  # None is included in temps
-          avg = numpy.nanmean(temps)  # nanmean() ignores NaN, formerly None
-          stdev = numpy.nanstd(temps)  # nanstd() ignores NaN, formerly None
-          print(date, "\t", plot, "\t", interval, "\t",numpy.nanmin(temps), 
-                "\t", numpy.nanmax(temps),"\t", avg, "\t", stdev, file = fi)  
-        else:
-          print("no data for" , interval, plot, date)  # If there was no data for a given plot/depth/date, this will ID
-          # Print statement above will only let you know the target date for which there was no data at plot/depth. This does not warn that there were missing values within the average calc
-          # TO DO: Identify individual records with missing data
+  final_res = []
+  for date in sampling_dates:  # Remove index for final version
+    for plot in plots:  
+      for i in range(0, len(intervals)):
+        #depth = get_depth()
+        temps = []  # maybe there's a numpy function for transposing instead of going line by line?
+        for sample in avgs:
+          if in_range(sample, date) and plot == int(sample[1]):  # Is this necessary? Seems like maybe if you're going to have multiple ranges
+            temps.append(sample[i+2])
+        avg = numpy.mean(temps)
+        stdev = numpy.std(temps) 
+        tmp2 = [date, plot, intervals[i], min(temps), max(temps), avg, stdev] 
+        final_res.append(tmp2)
+        fi.write('\t'.join(map(str, tmp2)) + '\n')
 print(datetime.datetime.now())  # Would probably be most helpful to have the measurement number. Then you could easily find the entry in question

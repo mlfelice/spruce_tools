@@ -250,12 +250,12 @@ with open(InFileName, 'r') as InFile:
           data.append(fields)  # if plot matches targets, add the line (list) to data list (produces list of lists)
 
 # Write filtered to data to csv for documentation      
-OutFile1 = "C:/Users/Mark/Desktop/wew_files_temp/DPH_Btemps.csv"
-with open(OutFile1, 'w') as e:
-  e.write(','.join(filter(header))+"\n")  # Writes header to first line of output file 1
+BTempsCSV = "C:/Users/Mark/Desktop/wew_files_temp/DPH_Btemps.csv"
+with open(BTempsCSV, 'w') as bt:
+  bt.write(','.join(filter(header))+"\n")  # Writes header to first line of output file 1
   for fields in data:
     output = ",".join(fields)  # condense list back into a string
-    e.write(output + "\n")  # write to line of output file
+    bt.write(output + "\n")  # write to line of output file
 print(datetime.datetime.now())
 
 
@@ -266,37 +266,42 @@ print(datetime.datetime.now())
 
 
 
-## Calculate the average temperature per DPH sampling depth increment for each plot at each 30-minute timestamp.
-
-OutFile2 = ('C:/Users/Mark/Desktop/wew_files_temp/DPH_Averages.txt') # tab-separated b/c interval is tuple
-with open(OutFile2, 'w') as f:
-  print('TimeStamp \tPlot \tupper depth \tlower depth \taverage temperature', 
-        file = f)
-  for line in data:
-    for i in intervals:
+# Calculate the average temperature per DPH sampling depth increment for each plot at each 30-minute timestamp.
+# **Input data are for sensor temps, output is for actual sampling intervals. Each date x plot will have different number of entries
+AvgCSV = ('C:/Users/Mark/Desktop/wew_files_temp/DPH_Averages.txt') # tab-separated b/c interval is tuple
+with open(AvgCSV, 'w') as av:
+  print('TimeStamp \tPlot \tupper depth \tlower depth \taverage temperature',  # Print header to ouput csv
+        file = av)  
+  for line in data:  # Iterate over lines in list containing data
+    # Use each line of data to calculate average temp across each peat sampling interval
+    # Remember, 'data' contains sensor temps, but output file will have peat sampling temps
+    for i in intervals:  
       print(line[0], '\t', line[1], '\t', str(i[0]), '\t', str(i[1]), '\t', 
-            average(line, i),  file = f)  
+            average(line, i),  file = av)  # see average() documentation for more info
 print(datetime.datetime.now())
 ## Return the average, standard deviation, maximum, and minimum temperature 
-## for each DPH sampling depth increment over the 48 hour time period prior to the day of sampling.
+## for each DPH sampling depth increment over the calendar year of sampling
 
-OutFile3 = 'C:/Users/Mark/Desktop/wew_files_temp/DPH_plot_depth_date.txt'  # tab-separated b/c interval is tuple
-with open(OutFile3, 'w') as g:
-  print('Date \tPlot \tDepth \tMin \tMax \tAverage \tStDev \n', file = g)
+# Average the interpolated sampling depth temps over all sampling dates over the calendar year, save to output file
+FinalCSV = 'C:/Users/Mark/Desktop/wew_files_temp/DPH_plot_depth_date.txt'  # tab-separated b/c interval is tuple
+with open(FinalCSV, 'w') as fi:
+  print('Date \tPlot \tDepth \tMin \tMax \tAverage \tStDev \n', file = fi)
   for plot in plots:
     for date in sampling_dates:
-      #max_depth = 200
       for interval in intervals:
-        temps = [ average(sample, interval) for sample in data  # I think this does the averaging across dates
-                 if in_range(sample, date) and int(sample[1]) == plot ]
-        temps = numpy.array(temps, dtype = numpy.float64)  # Converting to float64 array changes None to NaN
-        if len(temps) != 0:
+        temps = [ average(sample, interval) for sample in data  # recalc the sampling interval avg temp for each date and append to list for easy averaging
+                 if in_range(sample, date) and int(sample[1]) == plot ]  # If statements ensure that if you have multiple target dates, they stay separate in output
+        # The line above repeats code for the average, but no good workaround without major overhaul
+        temps = numpy.array(temps, dtype = numpy.float64)  # Converting to float64 array changes None to NaN, necessary for numpy functions that ignore missing values
+        if len(temps) != 0:  # Ensure that all data is not missing
           print(None in temps)  # None is included in temps
           print(0 in temps)
           avg = numpy.nanmean(temps)  # nanmean() ignores NaN, formerly None
           stdev = numpy.nanstd(temps)  # nanstd() ignores NaN, formerly None
           print(date, "\t", plot, "\t", interval, "\t",numpy.nanmin(temps), 
-                "\t", numpy.nanmax(temps),"\t", avg, "\t", stdev, file = g)  
+                "\t", numpy.nanmax(temps),"\t", avg, "\t", stdev, file = fi)  
         else:
-          print("no data for" , interval, plot, date)  # This will only tell you the date in the sampling dates list that had missing fields. This isn't the actual line that was missing data
+          print("no data for" , interval, plot, date)  # If there was no data for a given plot/depth/date, this will ID
+          # Print statement above will only let you know the target date for which there was no data at plot/depth. This does not warn that there were missing values within the average calc
+          # TO DO: Identify individual records with missing data
 print(datetime.datetime.now())  # Would probably be most helpful to have the measurement number. Then you could easily find the entry in question
